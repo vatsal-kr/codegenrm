@@ -1,10 +1,10 @@
 # @package _global_
 
 data:
-    train: wetsoledrysoul/CerebRM-Dataset-DPO
+    train: Aletheia-Bench/Aletheia-DPO
     val: null
-    chat_template_path: ./dsqwen_chat_template_dpo.jinja
-
+    chat_template_path: null
+    
 dpo_params:
     learning_rate: 5e-7
     beta: 0.1

@@ -8,7 +8,6 @@ import wandb
 from cerebrm_prompts import DS_GRM_PROMPT, JUDGELRM_PROMPT, LIST_REWARD_PROMPT, LIST_REWARD_PROMPT_COT
 from configs.schema import Config
 from datasets import load_dataset
-from kernels import has_kernel
 from omegaconf import OmegaConf
 from peft import LoraConfig
 from transformers import AutoTokenizer
@@ -131,16 +130,7 @@ def train(cfg: Config):
     log.info(f"Output directory: {output_dir}")
     log.info(f"Number of CPUs: {NUM_WORKERS}")
     log.info(f"Number of GPUs: {os.environ.get('WORLD_SIZE', torch.cuda.device_count())}")
-    kernel = None
-    if has_kernel("kernels-community/flash-attn3"):
-        kernel = "kernels-community/flash-attn3"
-        log.info("Flash Attention 3 kernel found. Using Flash Attention 3 for training.")
-    elif has_kernel("kernels-community/flash-attn2"):
-        kernel = "kernels-community/flash-attn2"
-        log.info("Flash Attention 2 kernel found. Using Flash Attention 2 for training.")
-    elif has_kernel("kernels-community/flash-attn"):
-        kernel = "kernels-community/flash-attn"
-        log.info("Flash Attention kernel found. Using Flash Attention for training.")
+    kernel = "flash_attention_2"
 
     config = GRPOConfig(
         model_init_kwargs={"attn_implementation": kernel},
@@ -160,7 +150,7 @@ def train(cfg: Config):
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         lr_scheduler_type=cfg.grpo_params.lr_scheduler_type,
-        max_prompt_length=cfg.grpo_params.max_prompt_length,
+        # max_prompt_length=cfg.grpo_params.max_prompt_length,
         num_train_epochs=cfg.grpo_params.num_epochs,
         per_device_train_batch_size=cfg.grpo_params.batch_size,
         seed=cfg.grpo_params.seed,
@@ -172,7 +162,6 @@ def train(cfg: Config):
         per_device_eval_batch_size=cfg.grpo_params.eval_batch_size if eval_data else None,
         # Checkpointing parameters
         output_dir=f"{output_dir}/intermediate_checkpoints",
-        overwrite_output_dir=cfg.grpo_params.overwrite_output_dir,
         save_strategy="steps",
         save_steps=cfg.grpo_params.save_steps,
         # Logging parameters
@@ -191,7 +180,7 @@ def train(cfg: Config):
         max_completion_length=cfg.gen_params.max_completion_length,
         num_generations=cfg.gen_params.num_generations,
         temperature=cfg.gen_params.temperature,
-        use_liger_loss=(not cfg.grpo_params.importance_sampling_level == "sequence" and not cfg.grpo_params.loss_type == "dapo"),
+        use_liger_kernel=(not cfg.grpo_params.importance_sampling_level == "sequence" and not cfg.grpo_params.loss_type == "dapo"),
         use_vllm=True,
         vllm_mode="colocate",
         vllm_server_host=cfg.gen_params.vllm_server_host,
@@ -199,15 +188,13 @@ def train(cfg: Config):
         vllm_server_timeout=cfg.gen_params.vllm_server_timeout,
         vllm_tensor_parallel_size=cfg.gen_params.vllm_tensor_parallel_size,
         vllm_gpu_memory_utilization=cfg.gen_params.vllm_gpu_memory_utilization,
+        vllm_max_model_length=cfg.gen_params.vllm_max_model_length,
         vllm_enable_sleep_mode=True,
         # Changes for speedup
         steps_per_generation=cfg.grpo_params.gradient_accumulation_steps * cfg.grpo_params.generate_every,
         importance_sampling_level=cfg.grpo_params.importance_sampling_level,
         scale_rewards=cfg.grpo_params.scale_rewards,
     )
-
-    if cfg.grpo_use_lora:
-        peft_config = LoraConfig(r=16, lora_alpha=32, target_modules="all-linear")
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.grpo_params.model_path)
     trainer = GRPOTrainer(
@@ -217,7 +204,6 @@ def train(cfg: Config):
         eval_dataset=eval_data,
         processing_class=tokenizer,
         reward_funcs=REWARD_FUNC,
-        peft_config=peft_config if cfg.grpo_use_lora else None,
     )
     # Start training with explicit checkpoint resumption
     trainer.train(resume_from_checkpoint=maybe_resume_training(config.output_dir))

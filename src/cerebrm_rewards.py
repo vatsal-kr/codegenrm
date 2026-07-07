@@ -27,12 +27,12 @@ def extract_boxed_contents_list(text: str) -> str:
     """
     # Match \boxed{...} with non-greedy content
     pattern = r"\\boxed\{(.*?)\}"
-    matches = re.search(pattern, text)
-    try:
-        matches = matches.group(1)
-    except Exception:
-        matches = None
-    return matches
+    matches = re.findall(pattern, text)
+
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
 
 
 def soft_overlong_punishment(completion_ids, L_max, L_cache, **kwargs):

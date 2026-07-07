@@ -10,7 +10,11 @@ from typing import List
 import torch
 from transformers import AutoConfig, AutoTokenizer
 from vllm import LLM, RequestOutput, SamplingParams
-from vllm.utils import get_open_port
+
+try:
+    from vllm.utils import get_open_port
+except ImportError:
+    from vllm.utils.network_utils import get_open_port
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)

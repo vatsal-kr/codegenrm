@@ -2,6 +2,6 @@
 
 star_params:
     model_path: Qwen/Qwen2.5-14B-Instruct
-    batch_size: 1
-    gradient_accumulation_steps: 16
+    batch_size: 2
+    gradient_accumulation_steps: 4
     gen_dp_size: 1

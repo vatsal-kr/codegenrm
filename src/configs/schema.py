@@ -45,6 +45,7 @@ class GenParams:
     temperature: float = None
     vllm_dtype: str = None
     vllm_gpu_memory_utilization: float = None
+    vllm_max_model_length: int = None
     vllm_server_host: str = None
     vllm_server_port: int = None
     vllm_server_timeout: int = None

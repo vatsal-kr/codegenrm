@@ -6,7 +6,6 @@ import hydra
 import wandb
 from configs.schema import Config
 from datasets import Dataset, load_dataset
-from kernels import has_kernel
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 from utils import maybe_resume_training
@@ -42,16 +41,7 @@ def train_model(
     output_dir: str,
     eval_data: Dataset | None = None,
 ) -> None:
-    kernel = None
-    if has_kernel("kernels-community/flash-attn3"):
-        kernel = "kernels-community/flash-attn3"
-        log.info("Flash Attention 3 kernel found. Using Flash Attention 3 for training.")
-    elif has_kernel("kernels-community/flash-attn2"):
-        kernel = "kernels-community/flash-attn2"
-        log.info("Flash Attention 2 kernel found. Using Flash Attention 2 for training.")
-    elif has_kernel("kernels-community/flash-attn"):
-        kernel = "kernels-community/flash-attn"
-        log.info("Flash Attention kernel found. Using Flash Attention for training.")
+    kernel = "flash_attention_2"
 
     config = SFTConfig(
         model_init_kwargs={"attn_implementation": kernel},

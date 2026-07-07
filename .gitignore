@@ -1,7 +1,7 @@
 **/__pycache__
 **/.vscode
-mambafpcox5lxznt
 **/*output*
+**/.ipynb_checkpoints
 **/test.py
 **/wandb
 **/flops_profile*

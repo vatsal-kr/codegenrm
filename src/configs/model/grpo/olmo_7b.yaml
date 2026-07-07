@@ -1,7 +1,7 @@
 # @package _global_
 
 grpo_params:
-    model_path: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+    model_path: allenai/Olmo-3-7B-Think-SFT
     batch_size: 1
     gradient_accumulation_steps: 128
 

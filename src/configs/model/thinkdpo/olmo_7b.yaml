@@ -1,0 +1,11 @@
+# @package _global_
+
+dpo_params:
+    model_path: allenai/Olmo-3-7B-Think-SFT
+    batch_size: 1
+    gradient_accumulation_steps: 8
+    precompute_ref_batch_size: 2
+    # method/thinkdpo.yaml hardcodes pad_token_id: 151647, which is DeepSeek/Qwen's <|EOT|> id.
+    # OLMo-3-7B-Think-SFT's vocab is only 100278 tokens; 151647 is out of range there.
+    # Override with OLMo's native <|pad|> id.
+    pad_token_id: 100277

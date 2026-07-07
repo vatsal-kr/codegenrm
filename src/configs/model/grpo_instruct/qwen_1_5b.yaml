@@ -2,9 +2,9 @@
 
 grpo_params:
     model_path: Qwen/Qwen2.5-1.5B-Instruct
-    batch_size: 8
+    batch_size: 4
     gradient_accumulation_steps: 32
 
 gen_params:
-    vllm_gpu_memory_utilization: 0.4
+    vllm_gpu_memory_utilization: 0.1
     vllm_tensor_parallel_size: 1

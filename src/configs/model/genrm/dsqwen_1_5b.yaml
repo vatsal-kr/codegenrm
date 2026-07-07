@@ -3,4 +3,4 @@
 genrm_params:
     model_path: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
     batch_size: 4
-    gradient_accumulation_steps: 4 
+    gradient_accumulation_steps: 2 

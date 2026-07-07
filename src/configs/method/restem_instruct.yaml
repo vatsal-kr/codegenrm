@@ -18,7 +18,7 @@ restem_params:
     warmup_ratio: 0.05
     weight_decay: 1e-2
     num_generations: 16
-    stage1_num_saves: 10
+    stage1_num_saves: 1
     pad_token_id: 151647
 
 wandb_params:

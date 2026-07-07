@@ -4,7 +4,6 @@ from pathlib import Path
 
 import hydra
 from datasets import Dataset, load_dataset
-from kernels import has_kernel
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 from trl import DPOConfig, DPOTrainer
@@ -43,25 +42,14 @@ def train_model(
     wandb_run_name: str,
     output_dir: str,
 ) -> None:
-    kernel = None
-    if has_kernel("kernels-community/flash-attn3"):
-        kernel = "kernels-community/flash-attn3"
-        log.info("Flash Attention 3 kernel found. Using Flash Attention 3 for training.")
-    elif has_kernel("kernels-community/flash-attn2"):
-        kernel = "kernels-community/flash-attn2"
-        log.info("Flash Attention 2 kernel found. Using Flash Attention 2 for training.")
-    elif has_kernel("kernels-community/flash-attn"):
-        kernel = "kernels-community/flash-attn"
-        log.info("Flash Attention kernel found. Using Flash Attention for training.")
+    kernel = "flash_attention_2"
 
     config = DPOConfig(
         model_init_kwargs={"attn_implementation": kernel},
-        ref_model_init_kwargs={"attn_implementation": kernel},
         output_dir=f"{output_dir}/intermediate_checkpoints",
-        overwrite_output_dir=cfg.dpo_params.overwrite_output_dir,
         # DPO Parameters
         beta=cfg.dpo_params.beta,
-        use_liger_loss=False,
+        use_liger_kernel=False,
         precompute_ref_log_probs=True,
         precompute_ref_batch_size=cfg.dpo_params.precompute_ref_batch_size,
         # Training parameters
@@ -74,8 +62,6 @@ def train_model(
         learning_rate=cfg.dpo_params.learning_rate,
         lr_scheduler_type=cfg.dpo_params.lr_scheduler_type,
         max_length=cfg.dpo_params.max_length,
-        max_prompt_length=None,
-        max_completion_length=None,
         num_train_epochs=cfg.dpo_params.num_epochs,
         per_device_train_batch_size=cfg.dpo_params.batch_size,
         per_device_eval_batch_size=None,
