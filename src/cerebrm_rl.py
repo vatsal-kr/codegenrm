@@ -1,15 +1,32 @@
 import logging
 import os
 
+# In colocate mode the 4 TP=2 vLLM engines on a node share compile-cache dirs
+# keyed only by TP rank (rank_0_0 / rank_1_0), so 4 processes contend on the
+# same locks during torch.compile at engine init. That can hold one member of
+# a TP pair back past the 600s NCCL watchdog while its peer waits in the first
+# cudagraph-capture collective. Per-rank cache roots remove the contention;
+# must be set before vllm is imported (via utils below).
+if "LOCAL_RANK" in os.environ:
+    # Key by hostname too: in multi-node runs, same-LOCAL_RANK processes on
+    # different nodes would otherwise contend on the same dir over VAST.
+    os.environ.setdefault(
+        "VLLM_CACHE_ROOT",
+        os.path.expanduser(
+            f"~/.cache/vllm/{os.uname().nodename}_rank_{os.environ['LOCAL_RANK']}"
+        ),
+    )
+
 import cerebrm_rewards
 import hydra
+from accelerate import PartialState
+from huggingface_hub import snapshot_download
 import torch
 import wandb
 from cerebrm_prompts import DS_GRM_PROMPT, JUDGELRM_PROMPT, LIST_REWARD_PROMPT, LIST_REWARD_PROMPT_COT
 from configs.schema import Config
 from datasets import load_dataset
 from omegaconf import OmegaConf
-from peft import LoraConfig
 from transformers import AutoTokenizer
 from utils import maybe_resume_training
 from functools import partial, update_wrapper
@@ -133,7 +150,7 @@ def train(cfg: Config):
     kernel = "flash_attention_2"
 
     config = GRPOConfig(
-        model_init_kwargs={"attn_implementation": kernel},
+        model_init_kwargs={"attn_implementation": kernel, "dtype": torch.bfloat16},
         # GRPO parameters
         beta=0.0 if cfg.grpo_params.kl_penalty == "no" else cfg.grpo_params.beta,
         epsilon=cfg.grpo_params.epsilon,
@@ -196,9 +213,24 @@ def train(cfg: Config):
         scale_rewards=cfg.grpo_params.scale_rewards,
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg.grpo_params.model_path)
+    # Warm the HF cache once per node before all ranks load the model.
+    # Concurrent first-time downloads/etag refreshes from 8 ranks into the
+    # shared cache on VAST can tear reads (a rank once got a config.json
+    # missing model_type mid-refresh). Local rank 0 downloads, others wait
+    # and then only ever read complete files.
+    # Load tokenizer and model from the local snapshot path, not the repo id:
+    # repo-id loads still make per-rank HTTP etag checks and take hub-cache
+    # locks even when fully cached, and with 8 ranks a single transient
+    # failure crashes the job (transformers' fallback path for a failed
+    # AutoConfig load is itself broken for yarn-rope configs in 5.12.1).
+    model_path = cfg.grpo_params.model_path
+    if not os.path.isdir(model_path):
+        with PartialState().local_main_process_first():
+            model_path = snapshot_download(model_path)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
     trainer = GRPOTrainer(
-        model=cfg.grpo_params.model_path,
+        model=model_path,
         args=config,
         train_dataset=train_data,
         eval_dataset=eval_data,
