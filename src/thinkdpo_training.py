@@ -1,11 +1,11 @@
 import logging
 import os
 from pathlib import Path
-
+import torch
 import hydra
 from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import DPOConfig, DPOTrainer
 
 import wandb
@@ -45,7 +45,7 @@ def train_model(
     kernel = "flash_attention_2"
 
     config = DPOConfig(
-        model_init_kwargs={"attn_implementation": kernel},
+        # model_init_kwargs={"attn_implementation": kernel, 'dtype': torch.bfloat16},
         output_dir=f"{output_dir}/intermediate_checkpoints",
         # DPO Parameters
         beta=cfg.dpo_params.beta,
@@ -93,8 +93,13 @@ def train_model(
     if cfg.dpo_params.pad_token_id:
         tokenizer.pad_token_id = cfg.dpo_params.pad_token_id
         tokenizer.pad_token = tokenizer.convert_ids_to_tokens(cfg.dpo_params.pad_token_id)
+    model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation=kernel, dtype=torch.bfloat16).to('cuda')
+    # ref_model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation=kernel, dtype=torch.bfloat16).to('cuda')
+    trainer = DPOTrainer(model=model_name, ref_model=model, args=config, train_dataset=data, processing_class=tokenizer)
+    gen_config = trainer.model.generation_config
+    if gen_config.temperature is not None or gen_config.top_p is not None or gen_config.top_k is not None:
+        gen_config.do_sample = True
 
-    trainer = DPOTrainer(model=model_name, ref_model=model_name, args=config, train_dataset=data, processing_class=tokenizer)
     trainer.train(resume_from_checkpoint=maybe_resume_training(config.output_dir))
     trainer.push_to_hub()
 

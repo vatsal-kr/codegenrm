@@ -1,0 +1,14 @@
+# @package _global_
+
+grpo_params:
+    model_path: Qwen/Qwen3-4B-Thinking-2507
+    batch_size: 2
+    gradient_accumulation_steps: 64
+
+gen_params:
+    vllm_gpu_memory_utilization: 0.5
+    # TP=2 wedges on cn37: its NVSwitch is thermally degraded (SXid 10004,
+    # 2026-07-08) and vllm TP collectives stall even with all multicast paths
+    # disabled. TP=1 avoids intra-vllm comms entirely and runs stably.
+    # Retry TP=2 after the node is rebooted/serviced.
+    vllm_tensor_parallel_size: 1

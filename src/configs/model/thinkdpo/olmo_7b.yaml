@@ -1,4 +1,6 @@
 # @package _global_
+data:
+    chat_template_path: ./olmo_think_chat_template_dpo.jinja
 
 dpo_params:
     model_path: allenai/Olmo-3-7B-Think-SFT
