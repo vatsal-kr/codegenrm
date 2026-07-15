@@ -1,16 +1,21 @@
 import logging
 import os
 from pathlib import Path
-import torch
 import hydra
 from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer
 from trl import DPOConfig, DPOTrainer
 
 import wandb
 from configs.schema import Config
+from olmo3_rope_patch import patch_olmo3_rope
 from utils import maybe_resume_training
+
+# Must run before any Olmo3 model is constructed (including the ones DPOTrainer
+# loads internally): transformers 5.0..5.12 applies yarn rope to all Olmo3
+# layers instead of only the full-attention ones. See olmo3_rope_patch.py.
+patch_olmo3_rope()
 
 wandb.login()
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -45,7 +50,7 @@ def train_model(
     kernel = "flash_attention_2"
 
     config = DPOConfig(
-        # model_init_kwargs={"attn_implementation": kernel, 'dtype': torch.bfloat16},
+        model_init_kwargs={"attn_implementation": kernel, "dtype": "bfloat16"},
         output_dir=f"{output_dir}/intermediate_checkpoints",
         # DPO Parameters
         beta=cfg.dpo_params.beta,
@@ -93,9 +98,14 @@ def train_model(
     if cfg.dpo_params.pad_token_id:
         tokenizer.pad_token_id = cfg.dpo_params.pad_token_id
         tokenizer.pad_token = tokenizer.convert_ids_to_tokens(cfg.dpo_params.pad_token_id)
-    model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation=kernel, dtype=torch.bfloat16).to('cuda')
-    # ref_model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation=kernel, dtype=torch.bfloat16).to('cuda')
-    trainer = DPOTrainer(model=model_name, ref_model=model, args=config, train_dataset=data, processing_class=tokenizer)
+    # ref_model=None + precompute_ref_log_probs=True: trl computes the ref log
+    # probs with the policy model itself before any update, so policy and ref
+    # share the exact same weights, dtype, and attention implementation. A
+    # separately loaded ref (previously bf16+FA2 vs the trainer's default-
+    # loaded policy) made the two forwards disagree systematically per token:
+    # step-1 loss was 1.42 instead of ln(2) and rewards/accuracies started at
+    # 0.08 instead of ~0.5 because the bias scales with sequence length.
+    trainer = DPOTrainer(model=model_name, ref_model=None, args=config, train_dataset=data, processing_class=tokenizer)
     gen_config = trainer.model.generation_config
     if gen_config.temperature is not None or gen_config.top_p is not None or gen_config.top_k is not None:
         gen_config.do_sample = True

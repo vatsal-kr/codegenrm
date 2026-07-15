@@ -33,6 +33,19 @@ from functools import partial, update_wrapper
 
 from trl import GRPOConfig, GRPOTrainer
 
+from olmo3_rope_patch import patch_olmo3_rope
+from trl_vllm_sleep_patch import patch_trl_vllm_sleep_sync
+
+# Both must run before GRPOTrainer constructs the model / vllm engine.
+# - patch_olmo3_rope: transformers 5.0..5.12 applies yarn rope to all Olmo3
+#   layers instead of only the full-attention ones, so trainer-side logps and
+#   gradients came from a different model than vllm's (correct) generations.
+# - patch_trl_vllm_sleep_sync: with sleep mode, trl's generate() reloads the
+#   ORIGINAL checkpoint from disk after sync_weights(), so vllm sampled from
+#   the frozen initial policy all run. See the two patch modules for details.
+patch_olmo3_rope()
+patch_trl_vllm_sleep_sync()
+
 logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
