@@ -185,6 +185,10 @@ def train(cfg: Config):
         log_level=cfg.wandb_params.log_level,
         log_on_each_node=True,
         logging_steps=cfg.grpo_params.logging_steps,
+        log_completions=True,
+        num_completions_to_print=1,
+        log_unique_prompts=True,
+        log_completions_hub_repo=f'wetsoledrysoul/{wandb_run_name}_completions',
         load_best_model_at_end=True if eval_data else False,
         report_to="wandb",
         run_name=wandb_run_name,
@@ -229,6 +233,13 @@ def train(cfg: Config):
             model_path = snapshot_download(model_path)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
+    if cfg.grpo_params.pad_token_id is not None:
+        tokenizer.pad_token_id = cfg.grpo_params.pad_token_id
+        tokenizer.pad_token = tokenizer.convert_ids_to_tokens(cfg.grpo_params.pad_token_id)
+    if cfg.grpo_params.eos_token_id is not None:
+        tokenizer.eos_token_id = cfg.grpo_params.eos_token_id
+        tokenizer.eos_token = tokenizer.convert_ids_to_tokens(cfg.grpo_params.eos_token_id)
+
     trainer = GRPOTrainer(
         model=model_path,
         args=config,
@@ -237,6 +248,14 @@ def train(cfg: Config):
         processing_class=tokenizer,
         reward_funcs=REWARD_FUNC,
     )
+    # Some instruct checkpoints (e.g. OLMo-3-instruct) ship a generation_config
+    # with temperature/top_p set but do_sample=False. GRPO generates via vLLM so
+    # this config is unused during training, but transformers validates it when
+    # saving a checkpoint and raises "temperature is set but do_sample is not True".
+    # Align do_sample with the presence of sampling params so save_pretrained succeeds.
+    gen_config = trainer.model.generation_config
+    if gen_config.temperature is not None or gen_config.top_p is not None or gen_config.top_k is not None:
+        gen_config.do_sample = True
     # Start training with explicit checkpoint resumption
     trainer.train(resume_from_checkpoint=maybe_resume_training(config.output_dir))
     trainer.push_to_hub()

@@ -4,7 +4,7 @@ data:
     train: Aletheia-Bench/Aletheia-DPO
     val: null
     chat_template_path: null
-    
+
 dpo_params:
     learning_rate: 5e-7
     beta: 0.1
@@ -18,7 +18,6 @@ dpo_params:
     use_bf16: True
     warmup_ratio: 0.05
     weight_decay: 1e-2
-    pad_token_id: 151647
 
 wandb_params:
     log_level: info

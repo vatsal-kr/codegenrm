@@ -93,6 +93,9 @@ def train_model(
     if cfg.dpo_params.pad_token_id:
         tokenizer.pad_token_id = cfg.dpo_params.pad_token_id
         tokenizer.pad_token = tokenizer.convert_ids_to_tokens(cfg.dpo_params.pad_token_id)
+    if cfg.dpo_params.eos_token_id:
+        tokenizer.eos_token_id = cfg.dpo_params.eos_token_id
+        tokenizer.eos_token = tokenizer.convert_ids_to_tokens(cfg.dpo_params.eos_token_id)
     model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation=kernel, dtype=torch.bfloat16).to('cuda')
     # ref_model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation=kernel, dtype=torch.bfloat16).to('cuda')
     trainer = DPOTrainer(model=model_name, ref_model=model, args=config, train_dataset=data, processing_class=tokenizer)
