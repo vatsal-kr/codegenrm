@@ -3,9 +3,11 @@ import math
 import os
 from pathlib import Path
 import hydra
+import torch
+from accelerate import PartialState
 from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
-from transformers import AutoTokenizer, TrainerCallback
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
 from trl import DPOConfig, DPOTrainer
 
 import wandb
@@ -75,7 +77,6 @@ def train_model(
     kernel = "flash_attention_2"
 
     config = DPOConfig(
-        model_init_kwargs={"attn_implementation": kernel, "dtype": "bfloat16"},
         output_dir=f"{output_dir}/intermediate_checkpoints",
         # DPO Parameters
         beta=cfg.dpo_params.beta,
@@ -130,7 +131,13 @@ def train_model(
     # loaded policy) made the two forwards disagree systematically per token:
     # step-1 loss was 1.42 instead of ln(2) and rewards/accuracies started at
     # 0.08 instead of ~0.5 because the bias scales with sequence length.
-    trainer = DPOTrainer(model=model_name, ref_model=None, args=config, train_dataset=data, processing_class=tokenizer, callbacks=[DPOStep1SanityCallback()])
+    #
+    # Load the policy instance ourselves and place it on this rank's device:
+    # under deepspeed the Trainer leaves a name-string model on CPU until
+    # train(), but _precompute_ref_logps runs in __init__ with cuda batches
+    # and crashes on the device mismatch.
+    model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation=kernel, dtype=torch.bfloat16).to(PartialState().device)
+    trainer = DPOTrainer(model=model, ref_model=None, args=config, train_dataset=data, processing_class=tokenizer, callbacks=[DPOStep1SanityCallback()])
     gen_config = trainer.model.generation_config
     if gen_config.temperature is not None or gen_config.top_p is not None or gen_config.top_k is not None:
         gen_config.do_sample = True
