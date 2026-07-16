@@ -1,10 +1,11 @@
 import logging
+import math
 import os
 from pathlib import Path
 import hydra
 from datasets import Dataset, load_dataset
 from omegaconf import OmegaConf
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, TrainerCallback
 from trl import DPOConfig, DPOTrainer
 
 import wandb
@@ -28,6 +29,30 @@ os.environ["WANDB_ENTITY"] = "CodeShield"
 os.environ["WANDB_PROJECT"] = "CerebRM-DPO"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 NUM_WORKERS = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else 1
+
+
+class DPOStep1SanityCallback(TrainerCallback):
+    """Abort immediately if the step-1 DPO loss deviates from ln(2).
+
+    With ref_model=None the ref log probs are precomputed by the policy model
+    itself, so before the first update loss == ln(2) and margins == 0 up to
+    numeric noise. A large deviation means the ref logps do not belong to the
+    current forward — most likely a stale HF-datasets precompute cache:
+    trl keys that cache on (dataset fingerprint, weight hash) only, so a code
+    change that alters the forward (e.g. the olmo3 rope patch) silently reuses
+    logps computed with the old forward. Delete the small cache-*.arrow file
+    with ref_chosen_logps/ref_rejected_logps columns under the dataset's
+    HF cache dir and rerun. (Seen 2026-07-15: step-1 loss 438 from this.)
+    """
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if state.global_step == 1 and logs is not None and "loss" in logs:
+            if abs(logs["loss"] - math.log(2)) > 0.1:
+                raise RuntimeError(
+                    f"Step-1 DPO loss is {logs['loss']:.4f}, expected ~ln(2)={math.log(2):.4f}. "
+                    "Precomputed reference log probs do not match the current policy forward "
+                    "(stale trl precompute cache or policy/ref mismatch). See DPOStep1SanityCallback."
+                )
 
 
 def conv_to_dpo_format(example):
@@ -105,7 +130,7 @@ def train_model(
     # loaded policy) made the two forwards disagree systematically per token:
     # step-1 loss was 1.42 instead of ln(2) and rewards/accuracies started at
     # 0.08 instead of ~0.5 because the bias scales with sequence length.
-    trainer = DPOTrainer(model=model_name, ref_model=None, args=config, train_dataset=data, processing_class=tokenizer)
+    trainer = DPOTrainer(model=model_name, ref_model=None, args=config, train_dataset=data, processing_class=tokenizer, callbacks=[DPOStep1SanityCallback()])
     gen_config = trainer.model.generation_config
     if gen_config.temperature is not None or gen_config.top_p is not None or gen_config.top_k is not None:
         gen_config.do_sample = True
